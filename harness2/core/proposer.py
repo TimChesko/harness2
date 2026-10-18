@@ -159,9 +159,12 @@ class Proposer:
                 if context_dir and Path(context_dir).is_dir():
                     shutil.copytree(context_dir, tmp / "context", dirs_exist_ok=True)
                 with _SEM if _SEM is not None else contextlib.nullcontext():
-                    text, cost, err = (
-                        self._claude_cli if self.spec.kind == "claude_cli" else self._opencode
-                    )(tmp, mission, system, wall)
+                    execute = {
+                        "claude_cli": self._claude_cli,
+                        "opencode": self._opencode,
+                        "codex_cli": self._codex_cli,
+                    }[self.spec.kind]
+                    text, cost, err = execute(tmp, mission, system, wall)
                 spent_usd += cost
                 if not text.strip():
                     last = err or "empty reply"
@@ -206,6 +209,16 @@ class Proposer:
             attempts=tries,
             cost_usd=spent_usd,
         )
+
+    def _codex_cli(
+        self, cwd: Path, mission: str, system: str, wall: int
+    ) -> tuple[str, float, str]:
+        from ..local.executor import CodexExecutor
+
+        result = CodexExecutor(self.spec.model, effort=self.spec.effort).run(
+            f"{system}\n\n{mission}", cwd, cwd / ".codex-audit", timeout=wall
+        )
+        return result, 0.0, ""
 
     def _claude_cli(
         self, cwd: Path, mission: str, system: str, wall: int
